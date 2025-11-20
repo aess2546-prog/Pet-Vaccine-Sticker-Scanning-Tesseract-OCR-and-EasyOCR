@@ -492,6 +492,7 @@ def format_date(day: str, month: str, year: str) -> str:
         'JV': 'JUN', 'JU': 'JUN', 'JUIV': 'JUN',
         'OOT': 'OCT', '0OT': 'OCT', '0CT': 'OCT', 'O0T': 'OCT', 'OCTT': 'OCT', 'OC': 'OCT',
         'OEC': 'DEC',
+        'BUC': 'MAY',
         'APRIL': 'APR', 'AP R': 'APR', 'AO': 'APR', 'A0': 'APR',
         'RAY': 'MAY',
     }
@@ -635,17 +636,78 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
     def find_later_date_candidates(text: str):
         # find all day MONTH YEAR tokens. Normalize by uppercasing and
         # replacing punctuation with spaces so patterns like 'SEP.23' or 'SEP23'
-        # become 'SEP 23' and can be matched.
+        # become 'SEP 23'. Also allow noisy year tokens like '2 62' by
+        # extracting digit substrings near the month and trying plausible
+        # two-digit year candidates.
         t_search = re.sub(r'[^A-Z0-9\s]', ' ', (text or '').upper())
         t_search = re.sub(r'\s+', ' ', t_search).strip()
-        matches = re.findall(r'\b(\d{1,2})\s+([A-Z]{2,4})\s+(\d{2,4})\b', t_search)
+
         candidates = []
-        for d, m, y in matches:
+
+        # Primary: match day + month + a noisy year token (digits and spaces)
+        for mobj in re.finditer(r'\b(\d{1,2})\s+([A-Z]{2,6})\s+([0-9\s]{1,8})\b', t_search):
+            d, m, y_raw = mobj.groups()
+            # collect digit runs from the noisy year token
+            digit_runs = re.findall(r'\d{1,4}', y_raw)
+            # also consider concatenations of adjacent digit runs (e.g., '2 62' -> '262')
+            runs_to_process = list(digit_runs)
+            for i in range(len(digit_runs)):
+                for j in range(i+1, min(i+4, len(digit_runs))):
+                    concat = ''.join(digit_runs[i:j+1])
+                    if concat and concat not in runs_to_process and len(concat) <= 4:
+                        runs_to_process.append(concat)
+            # for each digit run, try to form a 2- or 4-digit year candidate
+            for dr in runs_to_process:
+                if len(dr) == 4:
+                    y_try = dr
+                    fmt = format_date(d, m, y_try)
+                    dt = parse_standard_date(fmt)
+                    if dt:
+                        candidates.append((dt, fmt))
+                # For short/noisy runs, generate 2-digit candidates by
+                # taking substrings (first2, last2, middle2) and applying
+                # small OCR substitution corrections to each substring.
+                if len(dr) >= 2:
+                    subs = set()
+                    subs.add(dr[:2])
+                    subs.add(dr[-2:])
+                    if len(dr) >= 3:
+                        subs.add(dr[1:3])
+
+                    # small substitution map for common OCR misreads
+                    sub_map = {'6': '4', '8': '3'}
+
+                    for s in subs:
+                        # direct candidate
+                        fmt = format_date(d, m, s)
+                        dt = parse_standard_date(fmt)
+                        if dt:
+                            candidates.append((dt, fmt))
+
+                        # substituted candidate
+                        s_chars = list(s)
+                        s_sub = ''.join(sub_map.get(ch, ch) for ch in s_chars)
+                        if s_sub != s:
+                            fmt2 = format_date(d, m, s_sub)
+                            dt2 = parse_standard_date(fmt2)
+                            if dt2:
+                                candidates.append((dt2, fmt2))
+
+        # Secondary: fallback simpler pattern day + month + short year token
+        for d, m, y in re.findall(r'\b(\d{1,2})\s+([A-Z]{2,6})\s+(\d{2,4})\b', t_search):
             fmt = format_date(d, m, y)
             dt = parse_standard_date(fmt)
             if dt:
                 candidates.append((dt, fmt))
-        return candidates
+
+        # Deduplicate by date
+        seen = set()
+        uniq = []
+        for dt, fmt in sorted(candidates, key=lambda x: x[0]):
+            if dt not in seen:
+                uniq.append((dt, fmt))
+                seen.add(dt)
+        return uniq
 
     if mfg_dt:
         need_fix = False
