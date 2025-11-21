@@ -1,39 +1,20 @@
-"""
-Data Extraction Module
-Parse OCR text → Structured vaccine data
-"""
-
 import re
 from typing import Dict, Optional
 from datetime import datetime
 
 
 def clean_text(text: str) -> str:
-    """Clean and normalize text"""
-    # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text)
-    # Remove special chars except letters, numbers, spaces, /()-
     text = re.sub(r'[^\w\s/()-]', '', text)
     return text.strip()
 
 
 def normalize_ocr_text(text: str) -> str:
-    """
-    Normalize common OCR mistakes to improve extraction accuracy.
-
-    Fixes included (case-insensitive):
-    - common misreads of 'MFG' (e.g., 'HLFG', 'HIFG') -> 'MFG'
-    - month typos like 'JAM' -> 'JAN'
-    - stray characters in years like '&' -> '4'
-    - 'SCR' -> 'SER' when used before numbers
-    - collapses multiple spaces and uppercases text for downstream regex
-    """
     if not text:
         return text
 
     t = text.upper()
 
-    # Simple replacements for common OCR errors
     replacements = {
         'HLFG': 'MFG',
         'HIFG': 'MFG',
@@ -56,7 +37,6 @@ def normalize_ocr_text(text: str) -> str:
         'A0': 'APR',
     }
 
-    # Additional domain-specific fixes (brands, registration typos)
     domain_replacements = {
         'DEFERUSOR': 'DEFENSOR',
         'DEFERUSO': 'DEFENSOR',
@@ -84,7 +64,6 @@ def normalize_ocr_text(text: str) -> str:
     for k, v in replacements.items():
         t = t.replace(k, v)
 
-    # More tolerant month / common OCR mistakes
     t = t.replace('OOT', 'OCT')
     t = t.replace('0CT', 'OCT')
     t = t.replace('O0T', 'OCT')
@@ -97,71 +76,56 @@ def normalize_ocr_text(text: str) -> str:
     t = t.replace('AO', 'APR')
     t = t.replace('A0', 'APR')
 
-    # Remove weird punctuation that may have survived
     t = re.sub(r"[^A-Z0-9\s/():-]", '', t)
 
-    # Collapse spaces
     t = re.sub(r'\s+', ' ', t).strip()
     return t
 
 
 def normalize_serial(raw: str) -> str:
-    """Normalize serial-like strings using quick heuristics.
-
-    - Removes non-alphanumeric chars
-    - If majority are digits, convert common letter misreads (S->5, O->0, I/L->1)
-    - If majority are letters, keep letters but strip ambiguous digits
-    """
     if not raw:
         return raw
     s = re.sub(r'[^A-Z0-9]', '', raw.upper())
     if not s:
         return raw
 
+    serial_pattern = re.match(r'^(\d{5,7})([A-Z]{0,2})$', s)
+    if serial_pattern:
+
+        return s
+
     digits = sum(c.isdigit() for c in s)
     letters = sum(c.isalpha() for c in s)
 
-    # If mixed or mostly digits, convert likely OCR letter misreads to digits
     if digits >= letters or (digits > 0 and letters > 0):
         s = s.replace('S', '5').replace('O', '0').replace('I', '1').replace('L', '1')
     else:
-        # If mostly letters, avoid turning letters into digits accidentally
         s = s.replace('0', 'O')
 
     return s
 
 
 def extract_vaccine_name(text: str) -> Optional[str]:
-    """
-    Extract vaccine name from left region text
-    
-    Patterns:
-    - "Rabies Vaccine"
-    - "Nobivac Rabies"
-    - "Felocell"
-    """
     t = text.upper()
 
-    # Look for common vaccine components (tolerant)
     components = []
-    # Rabies is common and should be detected explicitly
     if 'RABIES VACCINE' in t or 'RABIES' in t:
         components.append('Rabies Vaccine')
-    if 'FELINE RHINOTRACHEITIS' in t or 'RHINOTRACHEITIS' in t:
+    if 'FELINE' in t and ('RHINOTRACH' in t or 'RHINOTRACHC' in t):
         components.append('Feline Rhinotracheitis')
-    if 'CALICI' in t or 'PANLEUKOPENIA' in t or 'PANLCUKOPENIA' in t:
+    elif 'RHINOTRACHEITIS' in t or 'RHINOTRACH' in t or 'RHINOTRACHC' in t:
+        components.append('Feline Rhinotracheitis')
+    if 'CALICI' in t or 'PANLEUKOPENIA' in t or 'PANLCUKOPENIA' in t or 'PANLEUCOPENIA' in t:
         components.append('Calici-Panleukopenia')
-    if 'CHLAMYDIA' in t or 'PSITTACI' in t or 'PSITTACH' in t:
+    if 'CHLAMYDIA' in t or 'PSITTACI' in t or 'PSITTACH' in t or 'SHTCINDIS' in t:
         components.append('Chlamydia psittaci')
 
     if components:
         return '; '.join(components)
 
-    # Fallback: brand/keywords (include common OCR variants)
     match = re.search(r'(NOBIVAC|DEFENSOR|FELOCELL|FEUOCELL|FEUOKCELL|CEFENSOR)\s*\d*', t)
     if match:
         prod = match.group(0).strip()
-        # normalize obvious OCR brand typos
         prod = prod.replace('FEUOCELL', 'FELOCELL').replace('FEUOKCELL', 'FELOCELL').replace('CEFENSOR', 'DEFENSOR')
         return prod
 
@@ -169,37 +133,23 @@ def extract_vaccine_name(text: str) -> Optional[str]:
 
 
 def extract_product_name(text: str) -> Optional[str]:
-    """
-    Extract product/brand name
-    
-    Examples:
-    - DEFENSOR 3
-    - NOBIVAC RABIES
-    - FELOCELL 4
-    """
     t = text.upper()
 
-    # include common OCR variants of FELOCELL/FEUOCELL/FEUOKCELL and DEFERUSOR/DEFERUSO/CEFENSOR
-    match = re.search(r'(DEFENSOR|DEFERUSOR|DEFERUSO|CEFENSOR|NOBIVAC|FELOCELL|FEUOCELL|FEUOKCELL|FEUOKCELL|FEU O K|RABISIN)\s*[TM]*\s*\d*', t)
+    match = re.search(r'(DEFENSOR|DEFERUSOR|DEFERUSO|CEFENSOR|NOBIVAC|FELOCELL|FEUOCELL|FEUOKCELL|FEU?\s*O\s*K\s*C?\s*CELL|FE\s*O\s*K\s*C?\s*CELL|FE\s*OKC\s*ELL|ELOKCELL|ELCELL|RABISIN)\s*[TM]*\s*\d*', t)
     if match:
         prod = match.group(0).strip()
-        # normalize common typos
         prod = prod.replace('DEFERUSOR', 'DEFENSOR').replace('DEFERUSO', 'DEFENSOR').replace('CEFENSOR', 'DEFENSOR')
-        prod = prod.replace('FEUOCELL', 'FELOCELL').replace('FEUOKCELL', 'FELOCELL').replace('FEU O K', 'FELOCELL')
+        prod = prod.replace('FEUOCELL', 'FELOCELL').replace('FEUOKCELL', 'FELOCELL')
+        prod = re.sub(r'FEU?\s*O\s*K\s*C?\s*CELL', 'FELOCELL', prod)
+        prod = re.sub(r'FE\s*O\s*K\s*C?\s*CELL', 'FELOCELL', prod)
+        prod = re.sub(r'FE\s*OKC\s*ELL', 'FELOCELL', prod)
+        prod = prod.replace('ELOKCELL', 'FELOCELL').replace('ELCELL', 'FELOCELL')
         return prod
 
     return None
 
 
 def extract_manufacturer(text: str) -> Optional[str]:
-    """
-    Extract manufacturer
-    
-    Examples:
-    - Zoetis Inc.
-    - Boehringer Ingelheim
-    - Intervet
-    """
     text_upper = text.upper()
     
     manufacturers = [
@@ -213,7 +163,6 @@ def extract_manufacturer(text: str) -> Optional[str]:
         if keyword in text_upper:
             return full_name
     
-    # Try to find "Inc." pattern
     match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+Inc\.?', text)
     if match:
         return match.group(0)
@@ -222,65 +171,87 @@ def extract_manufacturer(text: str) -> Optional[str]:
 
 
 def extract_registration_number(text: str) -> Optional[str]:
-    """
-    Extract registration number
-    
-    Patterns:
-    - Reg No 1F 2/56 (B)
-    - Reg No. IF 2/56
-    - 1F 2/56 (B)
-    """
     t = text.upper()
+    t = t.replace('RSG', 'REG').replace('RGS', 'REG').replace('R S G', 'REG')
+    t = t.replace('GEG', 'REG')
+    t = t.replace('FEG', 'REG')
+    t = t.replace('RO.', 'NO.').replace('R O', 'NO')
 
-    # Prefer Pattern 1: explicit 'REG' / 'REG NO' nearby (highest confidence)
-    match = re.search(r'(?:REG(?:ISTER|ISTRATION)?\s*(?:NO|NO\.?|NO:?)?)\s*[:\-]?\s*([A-Z0-9\s/()\-]{2,30})', t, re.IGNORECASE)
-    if match:
-        val = clean_text(match.group(1))
-        # truncate at common following labels (avoid swallowing extra lines)
-        val = re.split(r'\b(?:SERIAL|SER|S/N|MFG|EXP|MANU|MANUFACT|DATE)\b', val)[0].strip()
-        # strip trailing noisy tokens like 'SER', 'SET', 'S/N', 'SERIAL'
-        val = re.sub(r'\b(SER|SET|S/N|SERIAL)\b\s*$', '', val).strip()
-        formatted = format_registration_number(val)
-        return formatted
+    m_frac = re.search(r'([0-9]{1,3}/[0-9]{1,3})', t)
 
-    # If there's an explicit 'REG' token, try to capture a registration in the nearby window after it
-    reg_token = re.search(r'(REG(?:ISTER|ISTRATION)?\s*(?:NO|NO\.?|NO:?)?)', t)
-    if reg_token:
-        start = reg_token.end()
-        window = t[start:start+80]
-        match = re.search(r'([A-Z0-9]{1,3})[\s/\-]?(\d{1,6}(?:/\d{1,4})?)(?:\s*\([A-Z0-9 ]+\))?', window)
-        if match:
-            parts = [p for p in match.groups() if p]
-            val = clean_text(' '.join(parts))
-            val = re.sub(r'\b(SER|SET|S/N|SERIAL)\b\s*$', '', val).strip()
+    if not m_frac:
+        
+        no_slash_match = re.search(r'\bREG\s*(?:NO\.?)?\s*([A-Z0-9]{1,3})\s*([0-9]{4,5})', t)
+        if no_slash_match:
+            prefix = no_slash_match.group(1)
+            number = no_slash_match.group(2)
+
+            after_number = t[no_slash_match.end():no_slash_match.end()+10]
+            suffix_match = re.search(r'\s*\(([A-Z0-9\- ]+)\)', after_number)
+
+            val = f"{prefix} {number}"
+            if suffix_match:
+                val = f"{val} ({suffix_match.group(1).strip()})"
+
             formatted = format_registration_number(val)
             return formatted
 
-    # Last-resort fallback (lower confidence): capture letter+digits pairs anywhere
-    # Try to capture slash-style registrations anywhere (e.g., 2F18/59)
-    m_frac = re.search(r'([0-9]{1,3}/[0-9]{1,3})', t)
-    if m_frac:
-        frac = m_frac.group(1)
-        prefix_raw = t[:m_frac.start()].strip()
-        prefix = re.sub(r'[^A-Z0-9]', '', prefix_raw)
-        if not prefix:
-            toks = re.split(r'\s+', prefix_raw)
-            prefix = re.sub(r'[^A-Z0-9]', '', toks[-1]) if toks else ''
-        val = (f"{prefix} {frac}" if prefix else frac).strip()
-        val = re.sub(r'\b(SER|SET|S/N|SERIAL)\b\s*$', '', val).strip()
-        formatted = format_registration_number(val)
-        return formatted
+        return None
 
-    # Last-resort fallback (lower confidence): capture letter+digits pairs anywhere
-    match = re.search(r'\b([A-Z]{1,4})\s*(\d{2,6})(?:\s*\([A-Z0-9 ]+\))?', t)
-    if match:
-        prefix = match.group(1)
-        # Ignore common serial-like prefixes that OCR may misread as registration
-        if prefix in ('SCR', 'SER', 'SN', 'S/N', 'SERIAL'):
+    frac = m_frac.group(1)
+
+    start_pos = max(0, m_frac.start() - 100)
+    before_slash = t[start_pos:m_frac.start()]
+
+    prefix_candidates = []
+
+    reg_patterns = [
+        r'\bREG\s+NO\s+([A-Z0-9]{1,3})\s*$',
+        r'\bREGNO\s*([A-Z0-9]{1,3})\s*$',     
+    ]
+
+    for pattern in reg_patterns:
+        reg_match = re.search(pattern, before_slash)
+        if reg_match:
+            prefix_candidates = [reg_match.group(1)]
+            break
+
+    if not prefix_candidates:
+        regstuck_match = re.search(r'REGNO([A-Z0-9]{2,10})\s*$', before_slash)
+        if regstuck_match:
+            stuck_part = regstuck_match.group(1)
+            if len(stuck_part) >= 2:
+                prefix_candidates = [stuck_part[-2:]]
+
+    if not prefix_candidates:
+        prefix_candidates = re.findall(r'([A-Z0-9]{1,3})\s*$', before_slash)
+
+    if not prefix_candidates:
+        window = before_slash[-15:] if len(before_slash) > 15 else before_slash
+        tokens = re.findall(r'[A-Z0-9]+', window)
+        if tokens:
+            prefix_raw = tokens[-1]
+            if 1 <= len(prefix_raw) <= 3:
+                prefix_candidates = [prefix_raw]
+            elif len(prefix_raw) >= 2:
+                last_2 = prefix_raw[-2:]
+                if re.match(r'^[A-Z0-9]{2}$', last_2):
+                    prefix_candidates = [last_2]
+
+    if prefix_candidates:
+        prefix = prefix_candidates[0]
+
+        if len(prefix) > 3:
             return None
-        parts = [p for p in match.groups() if p]
-        val = clean_text(' '.join(parts))
-        val = re.sub(r'\b(SER|SET|S/N|SERIAL)\b\s*$', '', val).strip()
+
+        val = f"{prefix} {frac}"
+
+        after_slash = t[m_frac.end():m_frac.end()+20]
+        paren_match = re.search(r'\s*\(([A-Z0-9\- ]+)\)', after_slash)
+        if paren_match:
+            suffix = paren_match.group(1).strip()
+            val = f"{val} ({suffix})"
+
         formatted = format_registration_number(val)
         return formatted
 
@@ -288,111 +259,83 @@ def extract_registration_number(text: str) -> Optional[str]:
 
 
 def format_registration_number(raw: str) -> Optional[str]:
-    """
-    Normalize registration numbers to a canonical form like:
-      - '2F18/59 (B)' -> '2F 18/59 (B)'
-      - '2F 18/59' -> '2F 18/59'
-      - 'L 5321' -> 'L 5321'
-      - 'NE 190' -> 'NE 190'
-
-    The function uppercases, strips noise, and tries to place a space
-    between alpha-prefix and numeric part and preserves any trailing
-    parenthetical suffix.
-    """
     if not raw:
         return None
     s = raw.upper().strip()
-    # Remove common noise
     s = re.sub(r'[^A-Z0-9/()\s]', '', s)
     s = re.sub(r'\s+', ' ', s).strip()
 
-    # Extract trailing parenthetical, e.g., (B)
     paren = None
     m_paren = re.search(r'\(([A-Z0-9\- ]+)\)\s*$', s)
     if m_paren:
         paren = m_paren.group(1).strip()
+        paren = paren.replace('0', 'B')
         s = s[:m_paren.start()].strip()
 
-    # If there is a fraction-like part (NN/NN) somewhere, isolate it and
-    # treat everything before it as the prefix (cleaned).
     m_frac = re.search(r'([0-9]{1,3}/[0-9]{1,3})', s)
     if m_frac:
         frac = m_frac.group(1)
         prefix_raw = s[:m_frac.start()].strip()
         prefix = re.sub(r'[^A-Z0-9]', '', prefix_raw)
-        if not prefix:
-            # fallback to first token before frac
-            toks = re.split(r'\s+', s[:m_frac.start()].strip())
-            prefix = re.sub(r'[^A-Z0-9]', '', toks[-1]) if toks else ''
-        out = f"{prefix} {frac}" if prefix else frac
-        if paren:
-            out = f"{out} ({paren})"
-        return out
 
-    # Try pattern: prefix + number (no slash)
-    m2 = re.search(r'^([A-Z]{1,3})\s*([0-9]{2,6})$', s)
+        if not prefix:
+            toks = re.split(r'\s+', prefix_raw)
+            prefix = re.sub(r'[^A-Z0-9]', '', toks[-1]) if toks else ''
+
+        if prefix:
+            prefix = prefix.replace('IF', '1F').replace('I F', '1F')
+            prefix = prefix.replace('ZF', '2F').replace('Z F', '2F')
+
+            if len(prefix) > 3:
+                return None
+            out = f"{prefix} {frac}"
+            if paren:
+                out = f"{out} ({paren})"
+            return out
+        else:
+            return None
+
+    m2 = re.search(r'^([A-Z0-9]{1,3})\s*([0-9]{2,6})$', s)
     if m2:
-        # We may see patterns like: 'ZF 18159' (no slash) where OCR missed '/'.
-        # Apply reconstruction for 2-letter prefixes by inserting a slash
-        # at the 3rd digit (i.e., split after 2 digits): '18159' -> '18/159'
         prefix = m2.group(1)
         number = m2.group(2)
 
-        # If prefix is 2 letters and numeric run is length 3..5, reconstruct
+        prefix = prefix.replace('IF', '1F').replace('ZF', '2F')
+
         if len(prefix) == 2 and len(number) >= 4:
-            # New rule: N1 = first 2 digits, N2 = last 2 digits. Drop middle digits as noise.
-            # Normalize numeric run: correct common letter→digit OCR errors
             conv = str.maketrans({'O': '0', 'Q': '0', 'D': '0', 'S': '5', 'Z': '2', 'I': '1', 'L': '1', 'B': '8', 'G': '6'})
             num_norm = number.translate(conv)
 
-            # Also attempt to fix prefix first-char if it's a letter but likely a digit
             p0 = prefix[0]
             p1 = prefix[1]
-            prefix_conv = prefix
             if not p0.isdigit():
                 p0_conv_map = {'Z': '2', 'O': '0', 'Q': '0', 'S': '5', 'I': '1', 'L': '1', 'B': '8', 'G': '6'}
                 if p0 in p0_conv_map:
-                    prefix_conv = p0_conv_map[p0] + p1
+                    prefix = p0_conv_map[p0] + p1
 
-            # Ensure numeric normalization yielded digits long enough
             if len(num_norm) < 4 or not num_norm.isdigit():
                 return None
-
             n1 = num_norm[:2]
             n2 = num_norm[-2:]
 
-            # Safety: require both parts to be digits and length == 2
             if n1.isdigit() and n2.isdigit() and len(n1) == 2 and len(n2) == 2:
-                out = f"{prefix_conv} {n1}/{n2}"
+                out = f"{prefix} {n1}/{n2}"
                 if paren:
                     out = f"{out} ({paren})"
                 return out
-
-        # Otherwise, do not attempt reconstruction here — keep strict canonical rules
-        return None
+    return None
 
 
 def extract_mfg_date(text: str) -> Optional[str]:
-    """
-    Extract manufacturing date
-
-    Patterns:
-    - MFG 22 JAN 23
-    - Mfg: 22 Jan 2023
-    - 22 JAN 23
-    """
     t = normalize_ocr_text(text)
 
-    # Prefer explicit MFG label — look for clear patterns first
     lab = re.search(r'\bMFG\b', t)
     if lab:
         tail = t[lab.end():lab.end()+120]
-        # 1) day MONTH YEAR
         m = re.search(r'\b(\d{1,2})\s+([A-Z]{2,4})\s+(\d{2,4})\b', tail)
         if m:
             day, month, year = m.groups()
             return format_date(day, month, year)
-        # 2) day only after MFG, then search for month+year after that position
         m = re.search(r'\b(\d{1,2})\b', tail)
         if m:
             day = m.group(1)
@@ -405,20 +348,16 @@ def extract_mfg_date(text: str) -> Optional[str]:
             if m3:
                 month = m3.group(1)
                 return format_date(day, month, '00')
-        # 3) month+year after MFG
         m = re.search(r'\b([A-Z]{2,4})\s+(\d{2,4})\b', tail)
         if m:
             month, year = m.groups()
             return format_date('01', month, year)
 
-
-    # Fallback: first date-like token across text (day month year)
     matches = re.findall(r'\b(\d{1,2})\s+([A-Z]{2,4})\s+(\d{2,4})\b', t)
     if matches:
         day, month, year = matches[0]
         return format_date(day, month, year)
 
-    # Try looser match: month+year only
     matches = re.findall(r'\b([A-Z]{2,4})\s+(\d{2,4})\b', t)
     if matches:
         month, year = matches[0]
@@ -428,17 +367,8 @@ def extract_mfg_date(text: str) -> Optional[str]:
 
 
 def extract_exp_date(text: str) -> Optional[str]:
-    """
-    Extract expiration date
-    
-    Patterns:
-    - EXP 11 JUN 24
-    - Exp: 11 Jun 2024
-    - Expiration: 11 JUN 24
-    """
     t = normalize_ocr_text(text)
 
-    # Prefer explicit EXP label — look for clear patterns first
     lab_e = re.search(r'\bEXP\b', t)
     if lab_e:
         tail = t[lab_e.end():lab_e.end()+120]
@@ -446,19 +376,16 @@ def extract_exp_date(text: str) -> Optional[str]:
         if m:
             day, month, year = m.groups()
             return format_date(day, month, year)
-        # month+year after EXP
         matches = re.findall(r'\b([A-Z]{2,4})\s+(\d{2,4})\b', tail)
         if matches:
             month, year = matches[-1]
             return format_date('01', month, year)
 
-    # Fallback: second date-like token in whole text
     matches = re.findall(r'\b(\d{1,2})\s+([A-Z]{2,4})\s+([0-9]{2,4})\b', t)
     if len(matches) >= 2:
         day, month, year = matches[1]
         return format_date(day, month, year)
 
-    # Looser fallback: last month+year pair
     matches = re.findall(r'\b([A-Z]{2,4})\s+([0-9]{2,4})\b', t)
     if matches:
         month, year = matches[-1]
@@ -468,25 +395,15 @@ def extract_exp_date(text: str) -> Optional[str]:
 
 
 def format_date(day: str, month: str, year: str) -> str:
-    """
-    Format date to standard format: DD MMM YYYY
-    
-    Examples:
-    - 22 JAN 23 → 22 Jan 2023
-    - 11 JUN 24 → 11 Jun 2024
-    """
-    # Normalize month token aggressively (remove punctuation, take letters)
     if not month:
         month = ''
     m_raw = re.sub(r'[^A-Z]', '', month.upper())
-    # Common OCR misreads map
     month_map = {
         'JAN': 'Jan', 'FEB': 'Feb', 'MAR': 'Mar', 'APR': 'Apr', 'MAY': 'May',
         'JUN': 'Jun', 'JUL': 'Jul', 'AUG': 'Aug', 'SEP': 'Sep', 'OCT': 'Oct',
         'NOV': 'Nov', 'DEC': 'Dec'
     }
 
-    # map likely misreads to canonical 3-letter keys
     fixes = {
         'JN': 'JAN', 'JA': 'JAN', 'JAIN': 'JAN',
         'JV': 'JUN', 'JU': 'JUN', 'JUIV': 'JUN',
@@ -497,7 +414,6 @@ def format_date(day: str, month: str, year: str) -> str:
         'RAY': 'MAY',
     }
 
-    # If month token is known noise, return it as-is (do not convert)
     noise_months = {'WS', 'CO'}
     if m_raw in noise_months:
         month_name = m_raw.capitalize()
@@ -506,17 +422,14 @@ def format_date(day: str, month: str, year: str) -> str:
         key = key[:3]
         month_name = month_map.get(key, key.capitalize())
     
-    # Convert to proper case
     months = {
         'JAN': 'Jan', 'FEB': 'Feb', 'MAR': 'Mar', 'APR': 'Apr',
         'MAY': 'May', 'JUN': 'Jun', 'JUL': 'Jul', 'AUG': 'Aug',
         'SEP': 'Sep', 'OCT': 'Oct', 'NOV': 'Nov', 'DEC': 'Dec'
     }
     
-    # month_name is already proper-cased candidate; fall back to mapping table if needed
     month_name = months.get(month_name.upper()[:3], month_name)
     
-    # Fix year (2-digit → 4-digit)
     if len(year) == 2:
         year_int = int(year)
         if year_int >= 20 and year_int <= 30:
@@ -524,17 +437,12 @@ def format_date(day: str, month: str, year: str) -> str:
         else:
             year = f'20{year}'
     
-    # Pad day
     day = day.zfill(2)
     
     return f'{day} {month_name} {year}'
 
 
 def parse_standard_date(date_str: str):
-    """Parse a date in the standard output format 'DD Mon YYYY' to datetime.
-
-    Returns datetime.date or None on failure.
-    """
     if not date_str:
         return None
     try:
@@ -544,56 +452,63 @@ def parse_standard_date(date_str: str):
 
 
 def extract_serial_number(text: str) -> Optional[str]:
-    """
-    Extract serial number from right region
-    Patterns:
-    - SER 643797
-    - SERIAL 643797
-    - Standalone 4-12 alnum token
-    """
     t = normalize_ocr_text(text)
 
-    # Strict pattern: 5-6 digits followed by a letter (required by domain rules)
-    strict = re.search(r'\b(\d{5,6}[A-Z])\b', t)
-    if strict:
-        raw = strict.group(1)
-        return normalize_serial(raw)
+    strict_pattern = r'\b(\d{5,7}[A-Z]{0,2})\b'
 
-    # Pattern 1: With "SER" or "SERIAL"
-    match = re.search(r'(?:SER|SERIAL)\s*[:\-\s]?\s*([A-Z0-9]{4,12})', t)
-    if match:
-        raw = match.group(1)
-        return normalize_serial(raw)
+    ser_match = re.search(r'(?:SER|SERIAL)\s*[:\-\s]?\s*(?:[A-Z]{1,5}\s+)?(\d{5,7}[A-Z]{0,2})\b', t)
+    if ser_match:
+        raw = ser_match.group(1)
+        if re.fullmatch(r'\d{5,7}[A-Z]{0,2}', raw):
+            reg_patterns = re.findall(r'(\d{1,3})/(\d{1,3})', t)
 
-    # Pattern 2: Standalone 4-12 alnum token
-    match = re.search(r'\b([A-Z0-9]{4,12})\b', t)
-    if match:
-        raw = match.group(1)
-        return normalize_serial(raw)
+            is_derived_from_reg = False
+            if raw.isdigit():
+                for n1, n2 in reg_patterns:
+                    combined = n1 + n2  # e.g., "18" + "59" = "1859"
+                    if raw == combined or (raw.startswith(n1) and raw.endswith(n2)):
+                        is_derived_from_reg = True
+                        break
+
+            if not is_derived_from_reg:
+                return normalize_serial(raw)
+
+    matches = re.findall(strict_pattern, t)
+
+    reg_patterns = re.findall(r'(\d{1,3})/(\d{1,3})', t)
+
+    for match in matches:
+        if re.fullmatch(r'\d{5,7}[A-Z]{0,2}', match):
+            match_pos = t.find(match)
+            if match_pos >= 0:
+                context_start = max(0, match_pos - 30)
+                context_end = min(len(t), match_pos + len(match) + 30)
+                context = t[context_start:context_end]
+
+                if re.search(r'\b(REG|REGNO|FEG|GEG|RSG|RGS)\b', context[:match_pos - context_start + 10]):
+                    continue
+
+            is_derived_from_reg = False
+            if match.isdigit():
+                for n1, n2 in reg_patterns:
+                    combined = n1 + n2
+                    if match == combined or (match.startswith(n1) and match.endswith(n2)):
+                        is_derived_from_reg = True
+                        break
+
+            if is_derived_from_reg:
+                continue
+
+            if len(match) >= 5 and match.isdigit() and len(match) == 6:
+                continue
+
+            return normalize_serial(match)
 
     return None
 
 
 def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[str]]:
-    """
-    🎯 MAIN FUNCTION: Extract all vaccine data
-    
-    Args:
-        left_text: OCR text from left region
-        right_text: OCR text from right region
-    
-    Returns:
-        {
-            'vaccine_name': 'Rabies Vaccine',
-            'product_name': 'DEFENSOR 3',
-            'manufacturer': 'Zoetis Inc.',
-            'registration_number': '1F 2/56 (B)',
-            'serial_number': '643797',
-            'mfg_date': '22 Jan 2023',
-            'exp_date': '11 Jun 2024',
-        }
-    """
-    print('\nExtracting vaccine data...')
+    print('\n กำลังดึงข้อมูลวัคซีน...')
     
     data = {
         'vaccine_name': extract_vaccine_name(left_text),
@@ -605,9 +520,6 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
         'exp_date': extract_exp_date(right_text),
     }
 
-    # Serial extraction: prefer strict domain rule (5-6 digits + trailing letter).
-    # Check right side first, then left side. If none match strict rule, fall back to
-    # looser extraction on right then left.
     serial_right = extract_serial_number(right_text)
     serial_left = extract_serial_number(left_text)
 
@@ -621,12 +533,8 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
     elif is_strict_serial(serial_left):
         data['serial_number'] = serial_left
     else:
-        # fallback: prefer right extraction if present, else left
         data['serial_number'] = serial_right or serial_left
 
-    # Post-process dates: ensure expiration date is after manufacturing date.
-    # If exp == mfg or exp is missing/earlier, try to find an alternate exp
-    # candidate in the right_text (then left_text) that is strictly later than mfg.
     mfg = data.get('mfg_date')
     exp = data.get('exp_date')
 
@@ -634,29 +542,20 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
     exp_dt = parse_standard_date(exp) if exp else None
 
     def find_later_date_candidates(text: str):
-        # find all day MONTH YEAR tokens. Normalize by uppercasing and
-        # replacing punctuation with spaces so patterns like 'SEP.23' or 'SEP23'
-        # become 'SEP 23'. Also allow noisy year tokens like '2 62' by
-        # extracting digit substrings near the month and trying plausible
-        # two-digit year candidates.
         t_search = re.sub(r'[^A-Z0-9\s]', ' ', (text or '').upper())
         t_search = re.sub(r'\s+', ' ', t_search).strip()
 
         candidates = []
 
-        # Primary: match day + month + a noisy year token (digits and spaces)
         for mobj in re.finditer(r'\b(\d{1,2})\s+([A-Z]{2,6})\s+([0-9\s]{1,8})\b', t_search):
             d, m, y_raw = mobj.groups()
-            # collect digit runs from the noisy year token
             digit_runs = re.findall(r'\d{1,4}', y_raw)
-            # also consider concatenations of adjacent digit runs (e.g., '2 62' -> '262')
             runs_to_process = list(digit_runs)
             for i in range(len(digit_runs)):
                 for j in range(i+1, min(i+4, len(digit_runs))):
                     concat = ''.join(digit_runs[i:j+1])
                     if concat and concat not in runs_to_process and len(concat) <= 4:
                         runs_to_process.append(concat)
-            # for each digit run, try to form a 2- or 4-digit year candidate
             for dr in runs_to_process:
                 if len(dr) == 4:
                     y_try = dr
@@ -664,9 +563,6 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
                     dt = parse_standard_date(fmt)
                     if dt:
                         candidates.append((dt, fmt))
-                # For short/noisy runs, generate 2-digit candidates by
-                # taking substrings (first2, last2, middle2) and applying
-                # small OCR substitution corrections to each substring.
                 if len(dr) >= 2:
                     subs = set()
                     subs.add(dr[:2])
@@ -674,17 +570,14 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
                     if len(dr) >= 3:
                         subs.add(dr[1:3])
 
-                    # small substitution map for common OCR misreads
                     sub_map = {'6': '4', '8': '3'}
 
                     for s in subs:
-                        # direct candidate
                         fmt = format_date(d, m, s)
                         dt = parse_standard_date(fmt)
                         if dt:
                             candidates.append((dt, fmt))
 
-                        # substituted candidate
                         s_chars = list(s)
                         s_sub = ''.join(sub_map.get(ch, ch) for ch in s_chars)
                         if s_sub != s:
@@ -693,14 +586,12 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
                             if dt2:
                                 candidates.append((dt2, fmt2))
 
-        # Secondary: fallback simpler pattern day + month + short year token
         for d, m, y in re.findall(r'\b(\d{1,2})\s+([A-Z]{2,6})\s+(\d{2,4})\b', t_search):
             fmt = format_date(d, m, y)
             dt = parse_standard_date(fmt)
             if dt:
                 candidates.append((dt, fmt))
 
-        # Deduplicate by date
         seen = set()
         uniq = []
         for dt, fmt in sorted(candidates, key=lambda x: x[0]):
@@ -717,12 +608,10 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
             need_fix = True
 
         if need_fix:
-            # search right then left for candidate dates later than mfg
             candidates = find_later_date_candidates(right_text)
             if not candidates:
                 candidates = find_later_date_candidates(left_text)
 
-            # pick the earliest candidate that is strictly after mfg
             pick = None
             for dt, fmt in sorted(candidates, key=lambda x: x[0]):
                 if dt > mfg_dt:
@@ -732,7 +621,6 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
             if pick:
                 data['exp_date'] = pick
 
-    # Infer product_name from vaccine_name or left_text when missing
     if not data.get('product_name'):
         vn = (data.get('vaccine_name') or '').upper()
         left_up = (left_text or '').upper()
@@ -741,14 +629,12 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
         elif 'RABIES' in vn or 'RABIES VACCINE' in vn or 'DEFENSOR' in left_up or 'DEFERUSOR' in left_up:
             data['product_name'] = 'DEFENSOR'
 
-    # If registration number looks suspicious (too short or purely numeric), try right_text as fallback
     reg = data.get('registration_number')
     if not reg or len(reg) < 4 or re.fullmatch(r'\d{1,6}', (reg or '').replace(' ', '')):
         reg_right = extract_registration_number(right_text)
         if reg_right:
             data['registration_number'] = reg_right
     
-    # Log results
     for key, value in data.items():
         status = '[OK]' if value else '[MISSING]'
         print(f'   {status} {key}: {value or "ไม่พบ"}')
@@ -757,17 +643,6 @@ def extract_vaccine_data(left_text: str, right_text: str) -> Dict[str, Optional[
 
 
 def validate_vaccine_data(data: Dict[str, Optional[str]]) -> Dict[str, bool]:
-    """
-    Validate extracted data
-    
-    Returns:
-        {
-            'has_vaccine_name': True/False,
-            'has_serial': True/False,
-            'has_dates': True/False,
-            'is_complete': True/False,
-        }
-    """
     validation = {
         'has_vaccine_name': bool(data.get('vaccine_name') or data.get('product_name')),
         'has_serial': bool(data.get('serial_number')),
@@ -784,7 +659,6 @@ def validate_vaccine_data(data: Dict[str, Optional[str]]) -> Dict[str, bool]:
     return validation
 
 
-# Thai field mappings
 THAI_FIELDS = {
     'vaccine_name': 'ชื่อวัคซีน',
     'product_name': 'ชื่อการค้า',
@@ -797,7 +671,6 @@ THAI_FIELDS = {
 
 
 def format_output_thai(data: Dict[str, Optional[str]]) -> str:
-    """Format data for Thai display"""
     lines = []
     for key, thai_name in THAI_FIELDS.items():
         value = data.get(key, 'ไม่พบ') or 'ไม่พบ'

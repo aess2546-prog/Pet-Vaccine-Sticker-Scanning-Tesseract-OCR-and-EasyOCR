@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ระบบตรวจสอบฉลากวัคซีนสัตว์เลี้ยง</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -12,7 +14,12 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">
-                <img src="{{ url_for('static', filename='images/paw.png') }}" alt="Paw" class="paw-icon" onerror="this.style.display='none'">
+                <img
+                    src="{{ url_for('static', filename='images/paw.png') }}"
+                    alt="Paw"
+                    class="paw-icon"
+                    onerror="this.style.display='none'"
+                />
                 <h1>ระบบตรวจสอบฉลากวัคซีน</h1>
             </div>
             <p class="subtitle">เปรียบเทียบ Tesseract กับ EasyOCR</p>
@@ -21,25 +28,42 @@
         <!-- Upload Section -->
         <section class="upload-card">
             <div class="upload-area" id="uploadBox">
-                <img src="{{ url_for('static', filename='images/upload.png') }}" alt="Upload" class="upload-icon" onerror="this.innerHTML='📸'">
-                <h3>เลือกรูปฉลากวัคซีน</h3>
-                <p>รองรับ JPG, PNG (ไม่เกิน 5MB)</p>
-                <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png" style="display: none;">
-                <button class="btn btn-upload" onclick="document.getElementById('fileInput').click()">
-                    เลือกรูปภาพ
-                </button>
+                <div class="upload-icon-wrapper">
+                    <img
+                        src="{{ url_for('static', filename='images/upload.png') }}"
+                        alt="Upload"
+                        class="upload-icon"
+                        onerror="this.style.display='none'"
+                    />
+                </div>
+
+                <h3 class="upload-title">เลือกรูปฉลากวัคซีน</h3>
+                <p class="upload-subtitle">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</p>
+
+                <div class="upload-specs">
+                    <span class="spec-item">JPG, PNG</span>
+                    <span class="spec-item">สูงสุด 5MB</span>
+                </div>
+
+                <input
+                    type="file"
+                    id="fileInput"
+                    accept="image/jpeg,image/jpg,image/png"
+                    style="display: none;"
+                />
+
+                <button class="btn btn-upload" id="uploadBtn">เลือกรูปภาพ</button>
             </div>
 
             <!-- Preview -->
             <div id="imagePreview" class="preview-section" style="display: none;">
-                <img id="previewImg" src="" alt="Preview" class="preview-image">
+                <div class="preview-container">
+                    <img id="previewImg" src="" alt="Preview" class="preview-image" />
+                </div>
+
                 <div class="preview-actions">
-                    <button class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
-                        เปลี่ยนรูป
-                    </button>
-                    <button class="btn btn-process" onclick="processImage()">
-                        เริ่มตรวจสอบ
-                    </button>
+                    <button class="btn btn-secondary" id="changeImageBtn">เปลี่ยนรูป</button>
+                    <button class="btn btn-process" onclick="processImage()">เริ่มตรวจสอบ</button>
                 </div>
             </div>
         </section>
@@ -50,8 +74,29 @@
             <p>กำลังประมวลผล กรุณารอสักครู่...</p>
         </div>
 
-        <!-- Results -->
+        <!-- Results Section -->
         <section id="results" class="results-container" style="display: none;">
+            <div class="preview-card">
+                <h2>ภาพที่ประมวลผล</h2>
+
+                <div class="preview-grid">
+                    <div class="preview-item">
+                        <h3>ภาพต้นฉบับ</h3>
+                        <img id="originalImage" src="" alt="Original" />
+                    </div>
+
+                    <div class="preview-item">
+                        <h3>ส่วนซ้าย (หลังประมวลผล)</h3>
+                        <img id="leftPreprocessed" src="" alt="Left" />
+                    </div>
+
+                    <div class="preview-item">
+                        <h3>ส่วนขวา (หลังประมวลผล)</h3>
+                        <img id="rightPreprocessed" src="" alt="Right" />
+                    </div>
+                </div>
+            </div>
+
             <!-- Comparison Cards -->
             <div class="comparison-cards">
                 <!-- Tesseract -->
@@ -60,31 +105,14 @@
                         <h2>Tesseract OCR</h2>
                         <span class="time-badge" id="tessTime">0.0s</span>
                     </div>
+
                     <div class="card-content">
-                        <div class="info-row">
-                            <label>ชื่อวัคซีน</label>
-                            <span id="tessVaccineName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>ชื่อการค้า</label>
-                            <span id="tessTradeName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>เลขทะเบียน</label>
-                            <span id="tessRegNo" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>Serial Number</label>
-                            <span id="tessSerial" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>วันที่ผลิต</label>
-                            <span id="tessMfg" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>วันหมดอายุ</label>
-                            <span id="tessExp" class="value">-</span>
-                        </div>
+                        <div class="info-row"><label>ชื่อวัคซีน</label><span id="tessVaccineName" class="value">-</span></div>
+                        <div class="info-row"><label>ชื่อการค้า</label><span id="tessTradeName" class="value">-</span></div>
+                        <div class="info-row"><label>เลขทะเบียน</label><span id="tessRegNo" class="value">-</span></div>
+                        <div class="info-row"><label>Serial Number</label><span id="tessSerial" class="value">-</span></div>
+                        <div class="info-row"><label>วันที่ผลิต</label><span id="tessMfg" class="value">-</span></div>
+                        <div class="info-row"><label>วันหมดอายุ</label><span id="tessExp" class="value">-</span></div>
                     </div>
                 </div>
 
@@ -94,183 +122,108 @@
                         <h2>EasyOCR</h2>
                         <span class="time-badge" id="easyTime">0.0s</span>
                     </div>
+
                     <div class="card-content">
-                        <div class="info-row">
-                            <label>ชื่อวัคซีน</label>
-                            <span id="easyVaccineName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>ชื่อการค้า</label>
-                            <span id="easyTradeName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>เลขทะเบียน</label>
-                            <span id="easyRegNo" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>Serial Number</label>
-                            <span id="easySerial" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>วันที่ผลิต</label>
-                            <span id="easyMfg" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>วันหมดอายุ</label>
-                            <span id="easyExp" class="value">-</span>
-                        </div>
+                        <div class="info-row"><label>ชื่อวัคซีน</label><span id="easyVaccineName" class="value">-</span></div>
+                        <div class="info-row"><label>ชื่อการค้า</label><span id="easyTradeName" class="value">-</span></div>
+                        <div class="info-row"><label>เลขทะเบียน</label><span id="easyRegNo" class="value">-</span></div>
+                        <div class="info-row"><label>Serial Number</label><span id="easySerial" class="value">-</span></div>
+                        <div class="info-row"><label>วันที่ผลิต</label><span id="easyMfg" class="value">-</span></div>
+                        <div class="info-row"><label>วันหมดอายุ</label><span id="easyExp" class="value">-</span></div>
                     </div>
                 </div>
-                
-                <!-- Merged / Recommended -->
+
+                <!-- Merged Result -->
                 <div class="result-card merged-card">
                     <div class="card-header">
-                        <h2>ผลที่รวม (Merged)</h2>
-                        <span class="time-badge">Merged</span>
+                        <h2>ผลลัพธ์รวม</h2>
+                        <span class="time-badge">แนะนำ</span>
                     </div>
+
                     <div class="card-content">
-                        <div class="info-row">
-                            <label>ชื่อวัคซีน</label>
-                            <span id="mergedVaccineName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>ชื่อการค้า</label>
-                            <span id="mergedTradeName" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>เลขทะเบียน</label>
-                            <span id="mergedRegNo" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>Serial Number</label>
-                            <span id="mergedSerial" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>วันที่ผลิต</label>
-                            <span id="mergedMfg" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>วันหมดอายุ</label>
-                            <span id="mergedExp" class="value">-</span>
-                        </div>
-                        <div class="info-row">
-                            <label>ที่มา (source)</label>
-                            <span id="mergedSources" class="value">-</span>
-                        </div>
+                        <div class="info-row"><label>ชื่อวัคซีน</label><span id="mergedVaccineName" class="value">-</span></div>
+                        <div class="info-row"><label>ชื่อการค้า</label><span id="mergedTradeName" class="value">-</span></div>
+                        <div class="info-row"><label>เลขทะเบียน</label><span id="mergedRegNo" class="value">-</span></div>
+                        <div class="info-row"><label>Serial Number</label><span id="mergedSerial" class="value">-</span></div>
+                        <div class="info-row"><label>วันที่ผลิต</label><span id="mergedMfg" class="value">-</span></div>
+                        <div class="info-row"><label>วันหมดอายุ</label><span id="mergedExp" class="value">-</span></div>
                     </div>
                 </div>
             </div>
 
             <!-- Metrics -->
             <div class="metrics-card">
-                <h2>ผลการเปรียบเทียบ</h2>
-                
-                <div class="metrics-grid">
-                    <div class="metric-box">
-                        <div class="metric-label">ความแม่นยำ</div>
-                        <div class="metric-value tesseract-color" id="tessAccuracy">0%</div>
-                        <div class="metric-subtitle">Tesseract</div>
-                    </div>
-                    
-                    <div class="metric-box">
-                        <div class="metric-label">ความแม่นยำ</div>
-                        <div class="metric-value easyocr-color" id="easyAccuracy">0%</div>
-                        <div class="metric-subtitle">EasyOCR</div>
-                    </div>
-                    
-                    <div class="metric-box">
-                        <div class="metric-label">เวลาประมวลผล</div>
-                        <div class="metric-value tesseract-color" id="tessSpeed">0.0s</div>
-                        <div class="metric-subtitle">Tesseract</div>
-                    </div>
-                    
-                    <div class="metric-box">
-                        <div class="metric-label">เวลาประมวลผล</div>
-                        <div class="metric-value easyocr-color" id="easySpeed">0.0s</div>
-                        <div class="metric-subtitle">EasyOCR</div>
+                <h2>ผลการประเมิน</h2>
+
+                <div class="merge-quality-section">
+                    <h3>คุณภาพการรวมผล</h3>
+                    <div class="quality-grid">
+                        <div class="quality-box">
+                            <div class="quality-label">Tesseract</div>
+                            <div class="quality-value tesseract-color" id="mergeQualityTess">0%</div>
+                        </div>
+
+                        <div class="quality-box">
+                            <div class="quality-label">EasyOCR</div>
+                            <div class="quality-value easyocr-color" id="mergeQualityEasy">0%</div>
+                        </div>
+
+                        <div class="quality-box highlight">
+                            <div class="quality-label">รวม</div>
+                            <div class="quality-value merged-color" id="mergeQualityMerged">0%</div>
+                        </div>
+
+                        <div class="quality-box improvement">
+                            <div class="quality-label">Improvement</div>
+                            <div class="quality-value" id="mergeQualityImprovement">+0%</div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Charts -->
-                <div class="charts-container">
-                    <div class="chart-box">
-                        <h3>ความแม่นยำ</h3>
-                        <canvas id="accuracyChart"></canvas>
-                    </div>
-                    
-                    <div class="chart-box">
-                        <h3>ความเร็ว</h3>
-                        <canvas id="speedChart"></canvas>
-                    </div>
+                <div class="field-accuracy-section">
+                    <h3>ความแม่นยำรายฟิลด์</h3>
+                    <div id="fieldAccuracyBars"></div>
                 </div>
 
-                <!-- Winner -->
-                <div class="winner-box" id="winnerBox">
-                    <img src="{{ url_for('static', filename='images/trophy.png') }}" alt="Trophy" class="trophy-icon" onerror="this.innerHTML='🏆'">
-                    <div class="winner-text">
-                        <span class="winner-label">ผลลัพธ์ที่ดีกว่า:</span>
-                        <span class="winner-name" id="winnerName">-</span>
-                    </div>
+                <div class="merge-decisions-section">
+                    <h3>เหตุผลการเลือกข้อมูล</h3>
+                    <div id="mergeDecisionsTable"></div>
                 </div>
             </div>
 
             <!-- Raw OCR Text -->
             <div class="raw-text-card">
-                <h2>ข้อความที่ OCR อ่านได้</h2>
-                
-                <div class="raw-text-grid">
+                <div class="collapsible-header" onclick="toggleRawText()">
+                    <h2>ข้อความ OCR (คลิกเพื่อเปิด/ปิด)</h2>
+                    <span class="toggle-icon" id="rawTextToggle">▼</span>
+                </div>
+
+                <div class="raw-text-grid" id="rawTextContent" style="display: none;">
                     <div class="raw-text-box tesseract-bg">
-                        <h3>Tesseract - ส่วนซ้าย</h3>
+                        <h3>Tesseract — ซ้าย</h3>
                         <pre id="tessLeftRaw"></pre>
                     </div>
-                    
+
                     <div class="raw-text-box tesseract-bg">
-                        <h3>Tesseract - ส่วนขวา</h3>
+                        <h3>Tesseract — ขวา</h3>
                         <pre id="tessRightRaw"></pre>
                     </div>
-                    
+
                     <div class="raw-text-box easyocr-bg">
-                        <h3>EasyOCR - ส่วนซ้าย</h3>
+                        <h3>EasyOCR — ซ้าย</h3>
                         <pre id="easyLeftRaw"></pre>
                     </div>
-                    
+
                     <div class="raw-text-box easyocr-bg">
-                        <h3>EasyOCR - ส่วนขวา</h3>
+                        <h3>EasyOCR — ขวา</h3>
                         <pre id="easyRightRaw"></pre>
                     </div>
                 </div>
             </div>
-
-            <!-- Image Preview -->
-            <div class="preview-card">
-                <h2>ภาพที่ประมวลผล</h2>
-                
-                <div class="preview-grid">
-                    <div class="preview-item">
-                        <h3>ภาพต้นฉบับ</h3>
-                        <img id="originalImage" src="" alt="Original">
-                    </div>
-                    
-                    <div class="preview-item">
-                        <h3>ส่วนซ้าย (ประมวลผลแล้ว)</h3>
-                        <img id="leftPreprocessed" src="" alt="Left">
-                    </div>
-                    
-                    <div class="preview-item">
-                        <h3>ส่วนขวา (ประมวลผลแล้ว)</h3>
-                        <img id="rightPreprocessed" src="" alt="Right">
-                    </div>
-                </div>
-            </div>
         </section>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <img src="{{ url_for('static', filename='images/paw.png') }}" alt="Paw" class="footer-paw" onerror="this.style.display='none'">
-            <p>ระบบตรวจสอบฉลากวัคซีนสัตว์เลี้ยง</p>
-        </footer>
     </div>
 
+    <!-- Script -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

@@ -1,44 +1,109 @@
-// Vaccine OCR Web App - Frontend Logic (clean single-file)
-
 let currentFile = null;
 let accuracyChart = null;
 let speedChart = null;
 
-console.log('📜 Script loading...');
+console.log('กำลังโหลด...');
 
-// Wait for DOM to be fully loaded before accessing elements
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('✅ DOM Content Loaded');
+    console.log('DOM Content Loaded');
     initializeApp();
 });
 
 function initializeApp() {
     const fileInput = document.getElementById('fileInput');
-    const processBtn = document.getElementById('processBtn');
+    const uploadBox = document.getElementById('uploadBox');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const changeImageBtn = document.getElementById('changeImageBtn');
 
     if (!fileInput) {
-        console.error('❌ fileInput not found! Please check `index.html`.');
+        console.error('fileInput not found! Please check `index.html`.');
         return;
     }
 
-    // Attach listeners
     fileInput.addEventListener('change', handleFileSelect);
-    if (processBtn) processBtn.addEventListener('click', processImage);
 
-    console.log('✅ App initialized');
+    // การคลิกปุ่มอัปโหลด
+    if (uploadBtn) {
+        uploadBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // ป้องกันไม่ให้เหตุการณ์ลอยไปยัง uploadBox
+            fileInput.click();
+        });
+    }
+
+    // การคลิกปุ่มเปลี่ยนรูปภาพ
+    if (changeImageBtn) {
+        changeImageBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+    }
+
+    // ฟังก์ชันลากและวาง
+    if (uploadBox) {
+        //คลิกที่พื้นที่กล่องอัปโหลด
+        uploadBox.addEventListener('click', (e) => {
+            // ให้ทำงานเมื่อไม่ได้คลิกที่ตัวปุ่มโดยตรงเท่านั้น
+            if (uploadBtn && (e.target === uploadBtn || uploadBtn.contains(e.target))) {
+                return;
+            }
+            fileInput.click();
+        });
+
+        // ป้องกันการลากตามค่าเริ่มต้น
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadBox.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        // ไฮไลต์พื้นที่วางไฟล์เมื่อมีการลากมาทับ
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadBox.addEventListener(eventName, () => {
+                uploadBox.classList.add('drag-over');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadBox.addEventListener(eventName, () => {
+                uploadBox.classList.remove('drag-over');
+            }, false);
+        });
+
+        // จัดการไฟล์ที่ถูกวาง
+        uploadBox.addEventListener('drop', handleDrop, false);
+    }
+
+    console.log('App initialized with drag & drop');
+}
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+
+    if (files.length > 0) {
+        const file = files[0];
+        ตรวจสอบความถูกต้องและประมวลผลไฟล์
+        validateAndPreviewFile(file);
+    }
 }
 
 function handleFileSelect(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
+    validateAndPreviewFile(file);
+}
 
+function validateAndPreviewFile(file) {
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
     if (!allowedTypes.includes(file.type)) {
-        alert('รองรับเฉพาะไฟล์ JPG และ PNG เท่านั้น');
+        showNotification('รองรับเฉพาะไฟล์ JPG และ PNG เท่านั้น', 'error');
         return;
     }
     if (file.size > 5 * 1024 * 1024) {
-        alert('ไฟล์ต้องไม่เกิน 5MB');
+        showNotification('ไฟล์ต้องไม่เกิน 5MB', 'error');
         return;
     }
 
@@ -46,28 +111,73 @@ function handleFileSelect(e) {
 
     const reader = new FileReader();
     reader.onerror = () => {
-        console.error('❌ FileReader error');
-        alert('ไม่สามารถอ่านไฟล์ได้');
+        console.error('FileReader error');
+        showNotification('ไม่สามารถอ่านไฟล์ได้', 'error');
     };
 
     reader.onload = (ev) => {
         const previewImg = document.getElementById('previewImg');
-        const uploadCard = document.getElementById('uploadCard');
+        const uploadBox = document.getElementById('uploadBox');
         const imagePreview = document.getElementById('imagePreview');
         const results = document.getElementById('results');
+        const fileName = document.getElementById('fileName');
+        const imageSize = document.getElementById('imageSize');
 
         if (!previewImg) {
-            console.error('❌ previewImg element not found');
+            console.error('previewImg element not found');
             return;
         }
 
         previewImg.src = ev.target.result;
-        if (uploadCard) uploadCard.style.display = 'none';
+        if (fileName) fileName.textContent = file.name;
+        if (imageSize) {
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            imageSize.textContent = `ขนาดไฟล์: ${sizeMB} MB`;
+        }
+
+        if (uploadBox) uploadBox.style.display = 'none';
         if (imagePreview) imagePreview.style.display = 'block';
         if (results) results.style.display = 'none';
+
+        showNotification('อัปโหลดรูปภาพสำเร็จ!', 'success');
     };
 
     reader.readAsDataURL(file);
+}
+
+function showNotification(message, type = 'info') {
+    // การแจ้งเตือน
+    const styles = {
+        success: { bg: '#00b894', icon: '✓' },
+        error: { bg: '#d63031', icon: '✗' },
+        info: { bg: '#0984e3', icon: 'ℹ' }
+    };
+
+    const style = styles[type] || styles.info;
+
+    // สร้าง element ของการแจ้งเตือน
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${style.bg};
+        color: white;
+        padding: 16px 24px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        font-weight: 600;
+        animation: slideIn 0.3s ease-out;
+    `;
+    notification.textContent = `${style.icon} ${message}`;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 async function processImage() {
@@ -94,7 +204,7 @@ async function processImage() {
         if (loading) loading.style.display = 'none';
         displayResults(data);
     } catch (error) {
-        console.error('❌ Process error:', error);
+        console.error('Process error:', error);
         alert('เกิดข้อผิดพลาด: ' + error.message);
         if (loading) loading.style.display = 'none';
     }
@@ -124,7 +234,7 @@ function setTextContent(id, value) {
 function displayResults(data) {
     const results = document.getElementById('results');
     if (!results) {
-        console.error('❌ results element not found');
+        console.error('results element not found');
         return;
     }
     results.style.display = 'block';
@@ -145,7 +255,7 @@ function displayResults(data) {
     setTextContent('easyExp', getValue(data, 'easyocr.data.exp_date'));
     setTextContent('easyTime', getValue(data, 'metrics.easyocr.processing_time', 0) + 's');
 
-    // Merged / Recommended
+    // รวมรายการ / คำแนะนำ
     setTextContent('mergedVaccineName', getValue(data, 'merged.data.vaccine_name') || getValue(data, 'merged.data.product_name'));
     setTextContent('mergedTradeName', getValue(data, 'merged.data.product_name'));
     setTextContent('mergedRegNo', getValue(data, 'merged.data.registration_number'));
@@ -153,7 +263,7 @@ function displayResults(data) {
     setTextContent('mergedMfg', getValue(data, 'merged.data.mfg_date'));
     setTextContent('mergedExp', getValue(data, 'merged.data.exp_date'));
 
-    // Show sources/reasons compactly
+    // สรุปแหล่งที่มาและเหตุผล
     try {
         const sources = getValue(data, 'merged.sources', {});
         const parts = [];
@@ -178,14 +288,13 @@ function displayResults(data) {
     const winner = getValue(data, 'metrics.comparison.recommendation') || getValue(data, 'metrics.comparison.winner', 'Hybrid');
     setTextContent('winnerName', winner);
 
-    // Prefer per-side raw OCR output (unprocessed) if available; fall back to combined/raw formatted
     const tessLeftRaw = getValue(data, 'tesseract.raw_left') || getValue(data, 'tesseract.raw_output') || getValue(data, 'tesseract.formatted_output', '(ไม่มีข้อความ)');
     const tessRightRaw = getValue(data, 'tesseract.raw_right') || getValue(data, 'tesseract.raw_output') || getValue(data, 'tesseract.formatted_output', '(ไม่มีข้อความ)');
 
     const easyLeftRaw = getValue(data, 'easyocr.raw_left') || getValue(data, 'easyocr.raw_output') || getValue(data, 'easyocr.formatted_output', '(ไม่มีข้อความ)');
     const easyRightRaw = getValue(data, 'easyocr.raw_right') || getValue(data, 'easyocr.raw_output') || getValue(data, 'easyocr.formatted_output', '(ไม่มีข้อความ)');
 
-    // Put raw text into the <pre> blocks so whitespace/line breaks are preserved
+    // นำข้อความดิบใส่ <pre> เพื่อเก็บรูปแบบและเว้นวรรคเดิม
     const tessLeftEl = document.getElementById('tessLeftRaw');
     const tessRightEl = document.getElementById('tessRightRaw');
     const easyLeftEl = document.getElementById('easyLeftRaw');
@@ -206,10 +315,120 @@ function displayResults(data) {
     }
 
     const metrics = data.metrics || {};
-    createAccuracyChart(metrics);
-    createSpeedChart(metrics);
+
+    displayMergeQuality(metrics.merge_quality || {});
+    displayFieldAccuracy(metrics.field_level_accuracy || {});
+    displayMergeDecisions(metrics.merge_decisions || {});
 
     results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function displayMergeQuality(mergeQuality) {
+    setTextContent('mergeQualityTess', mergeQuality.tesseract_accuracy + '%' || '0%');
+    setTextContent('mergeQualityEasy', mergeQuality.easyocr_accuracy + '%' || '0%');
+    setTextContent('mergeQualityMerged', mergeQuality.merged_accuracy + '%' || '0%');
+
+    const improvement = mergeQuality.improvement || 0;
+    const improvementText = improvement >= 0 ? `+${improvement}%` : `${improvement}%`;
+    setTextContent('mergeQualityImprovement', improvementText);
+}
+
+function displayFieldAccuracy(fieldAccuracy) {
+    const container = document.getElementById('fieldAccuracyBars');
+    if (!container) return;
+
+    const fieldNames = {
+        'vaccine_name': 'ชื่อวัคซีน',
+        'product_name': 'ชื่อการค้า',
+        'registration_number': 'เลขทะเบียน',
+        'serial_number': 'Serial Number',
+        'mfg_date': 'วันที่ผลิต',
+        'exp_date': 'วันหมดอายุ'
+    };
+
+    let html = '';
+    for (const [field, label] of Object.entries(fieldNames)) {
+        const data = fieldAccuracy[field] || {};
+        const tessAcc = Math.round(data.tesseract || 0);
+        const easyAcc = Math.round(data.easyocr || 0);
+
+        html += `
+            <div class="field-accuracy-item">
+                <div class="field-label">${label}</div>
+                <div class="engine-bars">
+                    <div class="engine-row">
+                        <div class="engine-name">Tesseract</div>
+                        <div class="bar-track">
+                            <div class="bar-fill bar-tesseract" style="width: ${tessAcc}%"></div>
+                        </div>
+                        <div class="accuracy-value">${tessAcc}%</div>
+                    </div>
+                    <div class="engine-row">
+                        <div class="engine-name">EasyOCR</div>
+                        <div class="bar-track">
+                            <div class="bar-fill bar-easyocr" style="width: ${easyAcc}%"></div>
+                        </div>
+                        <div class="accuracy-value">${easyAcc}%</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+}
+
+function displayMergeDecisions(mergeDecisions) {
+    const container = document.getElementById('mergeDecisionsTable');
+    if (!container) return;
+
+    const fieldNames = {
+        'vaccine_name': 'ชื่อวัคซีน',
+        'product_name': 'ชื่อการค้า',
+        'registration_number': 'เลขทะเบียน',
+        'serial_number': 'Serial Number',
+        'mfg_date': 'วันที่ผลิต',
+        'exp_date': 'วันหมดอายุ'
+    };
+
+    let html = `
+        <table class="decision-table">
+            <thead>
+                <tr>
+                    <th>ฟิลด์</th>
+                    <th>Tesseract</th>
+                    <th>EasyOCR</th>
+                    <th>เลือก</th>
+                    <th>แหล่งที่มา</th>
+                    <th>ตรงกัน?</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (const [field, label] of Object.entries(fieldNames)) {
+        const data = mergeDecisions[field] || {};
+        const agree = data.engines_agree ? 'ใช่' : 'ไม่';
+        const agreeClass = data.engines_agree ? 'agree-yes' : 'agree-no';
+
+        html += `
+            <tr class="decision-row">
+                <td><strong>${label}</strong></td>
+                <td>${data.tesseract || '-'}</td>
+                <td>${data.easyocr || '-'}</td>
+                <td><strong>${data.selected || '-'}</strong></td>
+                <td><span class="source-badge">${data.source || '-'}</span></td>
+                <td><span class="agree-badge ${agreeClass}">${agree}</span></td>
+            </tr>
+        `;
+    }
+
+    html += `
+            </tbody>
+        </table>
+    `;
+
+    container.innerHTML = html;
 }
 
 function createAccuracyChart(metrics) {
@@ -243,7 +462,7 @@ function createAccuracyChart(metrics) {
             }
         });
     } catch (e) {
-        console.error('❌ Accuracy chart error', e);
+        console.error('Accuracy chart error', e);
     }
 }
 
@@ -278,8 +497,26 @@ function createSpeedChart(metrics) {
             }
         });
     } catch (e) {
-        console.error('❌ Speed chart error', e);
+        console.error('Speed chart error', e);
     }
 }
 
-console.log('✅ Script loaded');
+// Toggle Raw Text Section
+function toggleRawText() {
+    const content = document.getElementById('rawTextContent');
+    const toggleIcon = document.getElementById('rawTextToggle');
+
+    if (content && toggleIcon) {
+        if (content.style.display === 'none' || content.style.display === '') {
+            content.style.display = 'grid';
+            toggleIcon.textContent = '▲';
+            toggleIcon.classList.add('rotated');
+        } else {
+            content.style.display = 'none';
+            toggleIcon.textContent = '▼';
+            toggleIcon.classList.remove('rotated');
+        }
+    }
+}
+
+console.log('Script loaded');

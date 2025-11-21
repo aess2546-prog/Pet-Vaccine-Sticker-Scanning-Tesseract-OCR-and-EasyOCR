@@ -1,15 +1,9 @@
-"""
-Image Preprocessing Module - PRODUCTION READY
-✅ TESTED Settings: scale=7, alpha=1.3, beta=4, block=25, C=2
-"""
-
 import cv2
 import numpy as np
 from typing import Tuple
 
 
 def detect_split_point(image: np.ndarray) -> int:
-    """Detect split point between left-right regions"""
     height, width = image.shape[:2]
     
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
@@ -42,35 +36,29 @@ def detect_split_point(image: np.ndarray) -> int:
 
 
 def split_image_left_right(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Split image into left and right regions"""
     split_x = detect_split_point(image)
     return image[:, :split_x], image[:, split_x:]
 
 
 def rotate_90(image: np.ndarray) -> np.ndarray:
-    """Rotate image 90 degrees clockwise"""
     return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
 
 
 def preprocess_left_region(image: np.ndarray, scale: int = 2) -> np.ndarray:
-    """
-    Preprocess left region (white background)
-    ✅ Optimized for Tesseract OCR
-    """
     height, width = image.shape[:2]
     scaled = cv2.resize(image, (width*scale, height*scale), 
                        interpolation=cv2.INTER_CUBIC)
     
     gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY) if len(scaled.shape) == 3 else scaled
     
-    # Sharpen
+    # เพิ่มความคมชัด
     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
     sharpened = cv2.filter2D(gray, -1, kernel)
     
-    # Enhance
+    # เพิ่มประสิทธิภาพ
     enhanced = cv2.convertScaleAbs(sharpened, alpha=1.2, beta=10)
     
-    # Threshold
+    # การปรับค่าเกณฑ์
     _, binary = cv2.threshold(enhanced, 128, 255, cv2.THRESH_BINARY)
     
     # Denoise
@@ -80,37 +68,32 @@ def preprocess_left_region(image: np.ndarray, scale: int = 2) -> np.ndarray:
 
 
 def preprocess_right_region(image: np.ndarray, scale: int = 7) -> np.ndarray:
-    """
-    Preprocess right region (dark background)
-    ✅ PRODUCTION SETTINGS: scale=7, alpha=1.3, beta=4, block=25, C=2
-    ✅ Optimized for EasyOCR (Tesseract struggles with this region)
-    """
     height, width = image.shape[:2]
     
-    # Resize
+    # ปรับขนาด
     scaled = cv2.resize(image, (width*scale, height*scale), 
                        interpolation=cv2.INTER_CUBIC)
     
-    # Rotate
+    # หมุน
     rotated = rotate_90(scaled)
     
-    # Grayscale
+    # ภาพขาว-ดำ
     gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY) if len(rotated.shape) == 3 else rotated
     
-    # Invert
+    # สลับสี
     inverted = cv2.bitwise_not(gray)
     
-    # Bilateral filter
+    # ฟิลเตอร์ Bilateral
     bilateral = cv2.bilateralFilter(inverted, 9, 75, 75)
     
     # CLAHE
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     clahe_applied = clahe.apply(bilateral)
     
-    # ✅ TESTED: alpha=1.3, beta=4
+    # TESTED: alpha=1.3, beta=4
     enhanced = cv2.convertScaleAbs(clahe_applied, alpha=1.3, beta=4)
     
-    # ✅ TESTED: block=25, C=2
+    # TESTED: block=25, C=2
     binary = cv2.adaptiveThreshold(
         enhanced, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -134,21 +117,9 @@ def preprocess_right_region(image: np.ndarray, scale: int = 7) -> np.ndarray:
 
 
 def preprocess_right_region_for_tesseract(image: np.ndarray, scale: int = 10) -> np.ndarray:
-    """
-    🔥 EXPERIMENTAL: Enhanced preprocessing for Tesseract Right Region
-    
-    Note: EasyOCR still performs better on Right Region.
-    Use this only if you need Tesseract-only solution.
-    
-    Improvements:
-    - Higher scale (10x)
-    - Aggressive denoising
-    - Strong sharpening
-    - Text dilation
-    """
     height, width = image.shape[:2]
     
-    # Higher resolution
+    # ความละเอียดสูงขึ้น
     scaled = cv2.resize(image, (width*scale, height*scale), 
                        interpolation=cv2.INTER_CUBIC)
     
@@ -163,11 +134,9 @@ def preprocess_right_region_for_tesseract(image: np.ndarray, scale: int = 10) ->
     
     bilateral = cv2.bilateralFilter(denoised, 9, 100, 100)
     
-    # Strong CLAHE
     clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
     clahe_applied = clahe.apply(bilateral)
     
-    # Strong sharpening
     kernel_sharpen = np.array([
         [-1, -1, -1, -1, -1],
         [-1,  2,  2,  2, -1],
@@ -177,10 +146,8 @@ def preprocess_right_region_for_tesseract(image: np.ndarray, scale: int = 10) ->
     ]) / 9.0
     sharpened = cv2.filter2D(clahe_applied, -1, kernel_sharpen)
     
-    # High contrast
     enhanced = cv2.convertScaleAbs(sharpened, alpha=2.5, beta=20)
     
-    # Adaptive threshold
     binary = cv2.adaptiveThreshold(
         enhanced, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -188,19 +155,15 @@ def preprocess_right_region_for_tesseract(image: np.ndarray, scale: int = 10) ->
         blockSize=11, C=3
     )
     
-    # Denoise
     denoised2 = cv2.medianBlur(binary, 3)
     
-    # Dilation (make text thicker)
     kernel_dilate = np.ones((2, 2), np.uint8)
     dilated = cv2.dilate(denoised2, kernel_dilate, iterations=1)
     
-    # Morphological cleanup
     kernel = np.ones((2, 2), np.uint8)
     opened = cv2.morphologyEx(dilated, cv2.MORPH_OPEN, kernel, iterations=1)
     closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1)
     
-    # Final sharpening
     final = cv2.filter2D(closed, -1, np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]]))
     _, final = cv2.threshold(final, 127, 255, cv2.THRESH_BINARY)
     
