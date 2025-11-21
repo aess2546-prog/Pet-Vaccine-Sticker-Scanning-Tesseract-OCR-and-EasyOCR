@@ -182,12 +182,13 @@ function showNotification(message, type = 'info') {
 
 async function processImage() {
     if (!currentFile) {
-        alert('กรุณาเลือกไฟล์');
+        showNotification('กรุณาเลือกไฟล์', 'error');
         return;
     }
 
     const loading = document.getElementById('loading');
     const results = document.getElementById('results');
+    
     if (loading) loading.style.display = 'block';
     if (results) results.style.display = 'none';
 
@@ -195,17 +196,28 @@ async function processImage() {
     formData.append('file', currentFile);
 
     try {
-        const response = await fetch('/api/process', { method: 'POST', body: formData });
+        const response = await fetch('/api/process', { 
+            method: 'POST', 
+            body: formData 
+        });
+        
         if (!response.ok) {
-            const err = await response.text();
-            throw new Error(`Server error ${response.status}: ${err}`);
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
         const data = await response.json();
+        
         if (loading) loading.style.display = 'none';
-        displayResults(data);
+        
+        if (data.success) {
+            displayResults(data);
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+        
     } catch (error) {
         console.error('Process error:', error);
-        alert('เกิดข้อผิดพลาด: ' + error.message);
+        showNotification('เกิดข้อผิดพลาด: ' + error.message, 'error');
         if (loading) loading.style.display = 'none';
     }
 }
