@@ -290,7 +290,14 @@ def merge_ocr_results(tess_data: dict, easy_data: dict, hybrid_data: dict) -> di
     }
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": False
+    }
+})
 
 # กำหนดค่า
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
@@ -420,7 +427,7 @@ def api_test_preprocessing():
         return jsonify({
             'success': True,
             'white_percent': round(white_percent, 1),
-            'method': f'Adaptive (α={alpha}, β={beta}, block={block_size}, C={c_value})',
+            'method': f'Adaptive (alpha={alpha}, beta={beta}, block={block_size}, C={c_value})',
             'image_size': [binary.shape[0], binary.shape[1]],
             'processing_time': round(processing_time, 3),
             'images': {
@@ -437,10 +444,17 @@ def api_test_preprocessing():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/process', methods=['POST'])
+@app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_image():
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response, 200
+
     try:
-        # Validate file
+        # ตรวจสอบไฟล์
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
         
@@ -487,7 +501,7 @@ def process_image():
         save_image(left_processed, left_path)
         save_image(right_processed, right_path)
         
-        # === TESSERACT ===
+        # TESSERACT
         print('\nกำลังประมวลผลด้วย Tesseract...')
         start_time = time.time()
 
@@ -503,7 +517,7 @@ def process_image():
         print(f'Time: {tess_time:.2f}s')
         print(f'Complete: {tess_validation["is_complete"]}')
 
-        # === EASYOCR ===
+        # EASYOCR
         print('\nกำลังประมวลผลด้วย EasyOCR...')
         start_time = time.time()
 
@@ -519,7 +533,7 @@ def process_image():
         print(f'Time: {easy_time:.2f}s')
         print(f'Complete: {easy_validation["is_complete"]}')
 
-        # === เอามารวมกัน ===
+        # นำมารวมกัน
         print('\n กำลังประมวลผลด้วยการนำมารวมกัน...')
         start_time = time.time()
 
@@ -569,7 +583,7 @@ def process_image():
             }
         }
         
-        # Determine winner
+        # กำหนดว่าอะไรดีที่สุด
         if hybrid_detected >= max(tess_detected, easy_detected):
             winner = 'Hybrid'
         elif easy_detected > tess_detected:
@@ -592,7 +606,7 @@ def process_image():
         print(f'Winner:     {winner}')
         print(f'{"="*60}\n')
         
-        # Prepare response
+        # เตรียมการตอบกลับ
         response = {
             'success': True,
             'filename': filename,
@@ -666,7 +680,6 @@ if __name__ == '__main__':
     print(f'Upload folder: {UPLOAD_FOLDER}')
     print(f'Max file size: {MAX_FILE_SIZE / 1024 / 1024:.1f} MB')
     print(f'Server: http://localhost:5001')
-    print(f'Test page: http://localhost:5001/test')
     print('='*60)
     print()
 

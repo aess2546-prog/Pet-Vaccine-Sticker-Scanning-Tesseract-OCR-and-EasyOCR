@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python:*)",
       "Bash(timeout 3 curl:*)",
-      "Bash(timeout 2 curl:*)"
+      "Bash(timeout 2 curl:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []
