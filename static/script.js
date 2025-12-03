@@ -85,7 +85,7 @@ function handleDrop(e) {
 
     if (files.length > 0) {
         const file = files[0];
-        ตรวจสอบความถูกต้องและประมวลผลไฟล์
+        // ตรวจสอบความถูกต้องและประมวลผลไฟล์
         validateAndPreviewFile(file);
     }
 }
